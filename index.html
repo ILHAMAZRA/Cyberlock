@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secure Access System | Tableau de Bord IoT</title>
+  
+  <!-- Polices Google : Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- Icônes Lucide -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Bibliothèque Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Feuille de style -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="dashboard-container">
+    
+    <!-- 1. En-tête du tableau de bord -->
+    <header class="header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <i data-lucide="shield-check"></i>
+        </div>
+        <div>
+          <h1 class="brand-title">Secure Access System</h1>
+          <p class="brand-subtitle">Contrôle d'accès &amp; Télémétrie IoT ESP32</p>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <!-- Statut de connexion ESP32 -->
+        <div class="status-badge" id="esp32Badge">
+          <span class="status-dot online" id="esp32Dot"></span>
+          <span>ESP32 : <strong id="esp32Status">EN LIGNE</strong></span>
+        </div>
+
+        <!-- Dernière mise à jour -->
+        <div class="status-badge">
+          <i data-lucide="clock" class="icon-small"></i>
+          <span>Dernière MàJ : <strong id="lastUpdate">À l'instant</strong></span>
+        </div>
+
+        <!-- Compte à rebours de synchronisation ThingSpeak -->
+        <div class="status-badge countdown-badge" title="Délai de synchronisation ThingSpeak (15s) - Actualisation automatique à zéro">
+          <i data-lucide="timer" class="icon-small text-mauve"></i>
+          <span>Synchro : <strong id="pollCountdown" class="font-mono text-mauve">15s</strong></span>
+          <div class="countdown-bar-wrap">
+            <div class="countdown-bar" id="countdownBar"></div>
+          </div>
+        </div>
+
+        <!-- Sélecteur de Thème de Couleurs -->
+        <div class="status-badge theme-badge" title="Changer la palette de couleurs du site">
+          <i data-lucide="palette" class="icon-small text-mauve"></i>
+          <select id="themeSelect" class="theme-select" aria-label="Thème visuel">
+            <option value="cyber-lime">Cyber Lime (#B4F000)</option>
+            <option value="matrix">Matrix Green (#00FF00)</option>
+            <option value="mocha">Catppuccin Mocha</option>
+          </select>
+        </div>
+
+        <!-- Bouton Actualiser ThingSpeak -->
+        <button type="button" class="btn btn-secondary btn-refresh" id="btnRefresh" title="Actualiser les données immédiatement">
+          <i data-lucide="refresh-cw" id="refreshIcon"></i>
+          <span id="refreshLabel">Actualiser</span>
+        </button>
+
+        <!-- Bouton Configuration ThingSpeak -->
+        <button type="button" class="btn btn-secondary" id="btnToggleConfig" title="Configurer l'API ThingSpeak">
+          <i data-lucide="settings"></i>
+          <span>Config ThingSpeak</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Bannière d'Alerte de Sécurité / Confinement (DEFCON 3) -->
+    <div class="lockdown-banner" id="lockdownBanner" style="display: none;">
+      <div class="lockdown-content">
+        <div class="lockdown-icon">
+          <i data-lucide="shield-alert"></i>
+        </div>
+        <div class="lockdown-text">
+          <h3 id="lockdownTitle">ALERTE SÉCURITÉ &bull; RISQUE DE VERROUILLAGE ÉLEVÉ</h3>
+          <p id="lockdownDesc">Plusieurs tentatives de code PIN erronées consécutives ont été détectées.</p>
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnAcknowledgeAlert">
+        <i data-lucide="check-check"></i>
+        <span>Acquitter l'alerte</span>
+      </button>
+    </div>
+
+    <!-- Panneau de configuration ThingSpeak (Dépliable) -->
+    <section class="card config-panel" id="configPanel" style="display: none;">
+      <div class="card-header">
+        <i data-lucide="radio" class="text-mauve"></i>
+        <h2>Paramètres de l'API REST ThingSpeak</h2>
+      </div>
+      <div class="config-body">
+        <div class="config-inputs">
+          <div class="config-field">
+            <label for="inputChannelId">Channel ID ou URL ThingSpeak :</label>
+            <input type="text" id="inputChannelId" class="config-input font-mono" placeholder="Ex: 2198421 ou coller l'URL complète">
+          </div>
+          <div class="config-field">
+            <label for="inputReadKey">Read API Key (optionnel si public) :</label>
+            <input type="text" id="inputReadKey" class="config-input font-mono" placeholder="Ex: 9B3XYZ12OP987">
+          </div>
+        </div>
+        <div class="config-actions">
+          <button type="button" class="btn btn-primary" id="btnSaveConfig">
+            <i data-lucide="check"></i>
+            <span>Enregistrer &amp; Connecter</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Cartes de statistiques principales -->
+    <section class="stats-grid">
+      <!-- Total des tentatives -->
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">Total Tentatives</span>
+          <i data-lucide="activity" class="text-mauve"></i>
+        </div>
+        <div class="stat-value" id="statTotal">0</div>
+        <span class="stat-desc">Envois enregistrés</span>
+      </div>
+
+      <!-- Accès autorisés -->
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">Accès Autorisés</span>
+          <i data-lucide="check-circle" class="text-green"></i>
+        </div>
+        <div class="stat-value text-green" id="statGranted">0</div>
+        <span class="stat-desc" id="statGrantedRate">0% de réussite</span>
+      </div>
+
+      <!-- Accès refusés -->
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">Accès Refusés</span>
+          <i data-lucide="x-circle" class="text-red"></i>
+        </div>
+        <div class="stat-value text-red" id="statDenied">0</div>
+        <span class="stat-desc" id="statDeniedRate">0% de rejets</span>
+      </div>
+
+      <!-- Échecs de code PIN -->
+      <div class="stat-card">
+        <div class="stat-header">
+          <span class="stat-title">Échecs Code PIN</span>
+          <i data-lucide="alert-triangle" class="text-yellow"></i>
+        </div>
+        <div class="stat-value text-yellow" id="statFailed">0</div>
+        <span class="stat-desc" id="statFailedStatus">Seuil max : 3</span>
+      </div>
+    </section>
+
+    <!-- 3. État du dispositif & Graphiques -->
+    <section class="content-grid">
+      
+      <!-- État du matériel ESP32 et Serrure -->
+      <div class="card device-card">
+        <div class="card-header">
+          <div class="card-header-left">
+            <i data-lucide="cpu" class="text-mauve"></i>
+            <h2>État du Dispositif ESP32</h2>
+          </div>
+          <span class="device-badge" title="Télémétrie en temps réel du matériel et de la serrure physique">Matériel &amp; Serrure</span>
+        </div>
+
+        <div class="device-body">
+          <!-- Indicateur visuel de la serrure -->
+          <div class="lock-box" id="lockBox">
+            <div class="lock-icon-wrap" id="lockIconWrap">
+              <i data-lucide="lock" id="lockIcon"></i>
+            </div>
+            <div class="lock-info">
+              <span class="lock-state-label" id="lockStateLabel">VERROUILLÉ</span>
+              <p class="lock-state-sub" id="lockStateSub">Relais GPIO 18 actif (Serrure fermée)</p>
+            </div>
+          </div>
+
+          <!-- Détails télémétriques -->
+          <div class="device-details">
+            <div class="detail-row">
+              <span class="detail-label">Connexion ESP32 :</span>
+              <span class="detail-value text-green" id="detailEsp32">Actif (Wokwi / Live)</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Compteur échecs (Field 2) :</span>
+              <span class="detail-value text-yellow font-mono" id="detailFailedCount">0 tentative(s)</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">État serrure (Field 3) :</span>
+              <span class="detail-value text-mauve font-mono" id="detailLockField">1 (Verrouillé)</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Mode de données :</span>
+              <span class="detail-value text-mauve font-mono" id="detailSourceMode">Mode Démo</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Graphiques d'analyse (Chart.js) -->
+      <div class="card charts-card">
+        <div class="card-header">
+          <i data-lucide="bar-chart-2" class="text-mauve"></i>
+          <h2>Analytique des Accès</h2>
+        </div>
+
+        <div class="charts-body">
+          <!-- Graphique 1 : Évolution dans le temps -->
+          <div class="chart-container">
+            <h3 class="chart-title">Tentatives au fil du temps</h3>
+            <div class="canvas-wrap">
+              <canvas id="timelineChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Graphique 2 : Répartition Autorisés vs Refusés -->
+          <div class="chart-container">
+            <h3 class="chart-title">Autorisés vs Refusés</h3>
+            <div class="canvas-wrap doughnut-wrap">
+              <canvas id="ratioChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- 4. Historique des événements (Tableau d'activité) -->
+    <section class="card activity-card">
+      <div class="card-header activity-header">
+        <div class="card-header-left">
+          <i data-lucide="list" class="text-mauve"></i>
+          <h2>Historique des Événements d'Accès</h2>
+          <span class="badge-count" id="eventCountBadge">0 événements</span>
+        </div>
+        <div class="activity-actions">
+          <!-- Filtres -->
+          <div class="filter-group">
+            <button type="button" class="filter-pill active" data-filter="all">Tous</button>
+            <button type="button" class="filter-pill" data-filter="granted">Autorisés</button>
+            <button type="button" class="filter-pill" data-filter="denied">Refusés</button>
+            <button type="button" class="filter-pill" data-filter="alerts">Échecs &ge; 2</button>
+          </div>
+          <!-- Exporter CSV -->
+          <button type="button" class="btn btn-secondary btn-sm" id="btnExportCsv" title="Exporter l'historique au format CSV">
+            <i data-lucide="download"></i>
+            <span>Export CSV</span>
+          </button>
+          <!-- Effacer l'affichage des logs -->
+          <button type="button" class="btn btn-secondary btn-sm btn-danger-subtle" id="btnClearLogs" title="Effacer l'affichage des logs du tableau de bord">
+            <i data-lucide="trash-2"></i>
+            <span>Effacer l'historique</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="activity-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Horodatage</th>
+              <th>Statut d'Accès</th>
+              <th>Tentatives</th>
+              <th>État Serrure</th>
+              <th>Détails Événement</th>
+            </tr>
+          </thead>
+          <tbody id="activityTableBody">
+            <!-- Rempli dynamiquement par script.js -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 5. Pied de page avec mention obligatoire -->
+    <footer class="footer">
+      <p class="footer-title">Secure Access System &bull; IoT Dashboard Catppuccin Mocha</p>
+      <p class="footer-author">Created By Ilham Azra</p>
+    </footer>
+
+  </div>
+
+  <!-- Script principal -->
+  <script src="script.js?v=6.0"></script>
+</body>
+</html>
